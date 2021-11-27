@@ -243,26 +243,22 @@ class TestDFSIO(private val partitions: Long,
     val data = generateBuffer()
 
     val writeRdd = sc.textFile(controlPath, partitions.toInt).map(x => {
-
+      val dataFile = basePath + x.trim()
       val startMs = System.currentTimeMillis()
-
-          val dataFile = basePath + x.trim()
-          var i = partitionSize
-          val outstream = FileSystem.get(new URI(dataFile), new Configuration()).create(new Path(dataFile))
-          try {
-            while (i > 0) {
-              outstream.write(data)
-              i -= 1
-            }
-          } finally {
-            outstream.close()
-          }
+      var i = partitionSize
+      val outstream = FileSystem.get(new URI(dataFile), new Configuration()).create(new Path(dataFile))
+      try {
+        while (i > 0) {
+          outstream.write(data)
+          i -= 1
+        }
+      } finally {
+        outstream.close()
+      }
       val stopMs = System.currentTimeMillis()
       val durationMs = stopMs - startMs
       (partitionSize * TestDFSIO.MB, durationMs)
-
     })
-
     val startMs = System.currentTimeMillis()
     val taskData = writeRdd.collect()
     val stopMs = System.currentTimeMillis()
@@ -277,19 +273,17 @@ class TestDFSIO(private val partitions: Long,
 
       val startMs = System.currentTimeMillis()
       var totalBytesRead = 0L
-
-          val dataFile = basePath + x.trim()
-          val instream = FileSystem.get(new URI(dataFile), new Configuration()).open(new Path(dataFile))
-          try {
-            var bytesRead = instream.read(data)
-            while (bytesRead != -1) {
-              totalBytesRead += bytesRead
-              bytesRead = instream.read(data)
-            }
-          } finally {
-            instream.close()
-          }
-
+      val dataFile = basePath + x.trim()
+      val instream = FileSystem.get(new URI(dataFile), new Configuration()).open(new Path(dataFile))
+      try {
+        var bytesRead = instream.read(data)
+        while (bytesRead != -1) {
+          totalBytesRead += bytesRead
+          bytesRead = instream.read(data)
+        }
+      } finally {
+        instream.close()
+      }
       val stopMs = System.currentTimeMillis()
       val durationMs = stopMs - startMs
       (totalBytesRead, durationMs)
