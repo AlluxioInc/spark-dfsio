@@ -220,7 +220,7 @@ class TestDFSIO(private val partitions: Long,
       }
       t += 1
       }
-      1
+      1 * times
     })
 
     writeRdd.sum()
@@ -244,9 +244,9 @@ class TestDFSIO(private val partitions: Long,
 
     val writeRdd = sc.textFile(controlPath, partitions.toInt).map(x => {
       val dataFile = basePath + x.trim()
-      val startMs = System.currentTimeMillis()
       var i = partitionSize
       val outstream = FileSystem.get(new URI(dataFile), new Configuration()).create(new Path(dataFile))
+      val startMs = System.currentTimeMillis()
       try {
         while (i > 0) {
           outstream.write(data)
@@ -257,7 +257,7 @@ class TestDFSIO(private val partitions: Long,
       }
       val stopMs = System.currentTimeMillis()
       val durationMs = stopMs - startMs
-      (times * partitionSize * TestDFSIO.MB, durationMs)
+      (partitionSize * TestDFSIO.MB, durationMs)
     })
     val startMs = System.currentTimeMillis()
     val taskData = writeRdd.collect()
@@ -270,11 +270,10 @@ class TestDFSIO(private val partitions: Long,
 
     val readRdd = sc.textFile(controlPath, partitions.toInt).map(x => {
       val data = new Array[Byte](TestDFSIO.MB.toInt)
-
-      val startMs = System.currentTimeMillis()
       var totalBytesRead = 0L
       val dataFile = basePath + x.trim()
       val instream = FileSystem.get(new URI(dataFile), new Configuration()).open(new Path(dataFile))
+      val startMs = System.currentTimeMillis()
       try {
         var bytesRead = instream.read(data)
         while (bytesRead != -1) {
