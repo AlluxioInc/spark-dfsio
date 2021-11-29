@@ -257,7 +257,7 @@ class TestDFSIO(private val partitions: Long,
       }
       val stopMs = System.currentTimeMillis()
       val durationMs = stopMs - startMs
-      (partitionSize * TestDFSIO.MB, durationMs)
+      (times * partitionSize * TestDFSIO.MB, durationMs)
     })
     val startMs = System.currentTimeMillis()
     val taskData = writeRdd.collect()
