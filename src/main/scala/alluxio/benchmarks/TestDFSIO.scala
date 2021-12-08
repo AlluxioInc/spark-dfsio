@@ -30,6 +30,7 @@ object TestDFSIO {
   // the sub directory for the data
   private val DATA_DIR = "data/"
   private val FILE_PREFIX = "part-"
+  private val TIMES_PREFIX = "-time-"
 
   private def getOptions(): Options = {
     OptionBuilder.isRequired()
@@ -56,11 +57,18 @@ object TestDFSIO {
     OptionBuilder.withDescription("operations to run ('w' for writes, 'r' for reads")
     val operationsOption = OptionBuilder.create("o")
 
+    OptionBuilder.isRequired()
+    OptionBuilder.hasArg()
+    OptionBuilder.withArgName("TIMES")
+    OptionBuilder.withDescription("How many times you want run")
+    val timesOption = OptionBuilder.create("t")
+
     new Options()
       .addOption(partitionsOption)
       .addOption(sizeOption)
       .addOption(basePathOption)
       .addOption(operationsOption)
+      .addOption(timesOption)
   }
 
   private def printUsage(): Unit = {
@@ -73,6 +81,7 @@ object TestDFSIO {
     var partitionSize = 0L
     var basePath = ""
     var operations = ""
+    var times = 0L
     try {
       val parser = new BasicParser()
       val cmdLine = parser.parse(getOptions(), args)
@@ -84,6 +93,7 @@ object TestDFSIO {
       partitionSize = cmdLine.getOptionValue("s").toLong
       basePath = cmdLine.getOptionValue("b")
       operations = cmdLine.getOptionValue("o")
+      times = cmdLine.getOptionValue("t").toLong
     } catch {
       case e: Exception => {
         printUsage()
@@ -97,15 +107,16 @@ object TestDFSIO {
     basePath = basePath + TEST_DIR
     println("new basePath: " + basePath)
     println("operations: " + operations)
+    println("times: " + times)
 
     val conf = new SparkConf().setAppName("DFSIO")
     val sc = new SparkContext(conf)
 
     val tester = new TestDFSIO(partitions, partitionSize, basePath)
 
-    tester.runOperations(sc, operations)
+    tester.runOperations(sc, operations, times)
 
-    Thread.sleep(60000)
+    Thread.sleep(10000)
 
     sc.stop()
   }
@@ -151,9 +162,9 @@ class TestDFSIO(private val partitions: Long,
     }
   }
 
-  def runOperations(sc: SparkContext, operations: String): Unit = {
+  def runOperations(sc: SparkContext, operations: String, times: Long): Unit = {
     operations.map(_ match {
-      case 'w' | 'W' => runWrite(sc)
+      case 'w' | 'W' => runWrite(sc, times)
       case 'r' | 'R' => runRead(sc)
       case _ => new Result("", 1.0, Array())
     }).foreach(println _)
@@ -194,10 +205,12 @@ class TestDFSIO(private val partitions: Long,
     line.getBytes()
   }
 
-  private def generateControlFiles(sc: SparkContext): Unit = {
+  private def generateControlFiles(sc: SparkContext, times: Long): Unit = {
     val writeRdd = sc.parallelize(0 until partitions.toInt, partitions.toInt).map(x => {
-      val dataRelativeFile = TestDFSIO.DATA_DIR + TestDFSIO.FILE_PREFIX + x
-      val controlFile = controlPath + TestDFSIO.FILE_PREFIX + x
+      var t = 0
+      while (t < times){
+      val dataRelativeFile = TestDFSIO.DATA_DIR + TestDFSIO.FILE_PREFIX + x + TestDFSIO.TIMES_PREFIX + t
+      val controlFile = controlPath + TestDFSIO.FILE_PREFIX + x + TestDFSIO.TIMES_PREFIX + t
       val outstream = FileSystem.get(new URI(controlFile), new Configuration())
         .create(new Path(controlFile))
       try {
@@ -205,13 +218,15 @@ class TestDFSIO(private val partitions: Long,
       } finally {
         outstream.close()
       }
-      1
+      t += 1
+      }
+      1 * times
     })
 
     writeRdd.sum()
   }
 
-  private def runWrite(sc: SparkContext): Result = {
+  private def runWrite(sc: SparkContext, times: Long): Result = {
     val fs = FileSystem.get(new URI(basePath), new Configuration())
     if (fs.exists(new Path(basePath))) {
       println("path exists, deleting existing folder: " + basePath)
@@ -223,16 +238,15 @@ class TestDFSIO(private val partitions: Long,
 
     Thread.sleep(2000)
 
-    generateControlFiles(sc)
+    generateControlFiles(sc, times)
 
     val data = generateBuffer()
 
     val writeRdd = sc.textFile(controlPath, partitions.toInt).map(x => {
       val dataFile = basePath + x.trim()
-      val startMs = System.currentTimeMillis()
-
       var i = partitionSize
       val outstream = FileSystem.get(new URI(dataFile), new Configuration()).create(new Path(dataFile))
+      val startMs = System.currentTimeMillis()
       try {
         while (i > 0) {
           outstream.write(data)
@@ -256,10 +270,10 @@ class TestDFSIO(private val partitions: Long,
 
     val readRdd = sc.textFile(controlPath, partitions.toInt).map(x => {
       val data = new Array[Byte](TestDFSIO.MB.toInt)
-      val dataFile = basePath + x.trim()
-      val startMs = System.currentTimeMillis()
       var totalBytesRead = 0L
+      val dataFile = basePath + x.trim()
       val instream = FileSystem.get(new URI(dataFile), new Configuration()).open(new Path(dataFile))
+      val startMs = System.currentTimeMillis()
       try {
         var bytesRead = instream.read(data)
         while (bytesRead != -1) {
